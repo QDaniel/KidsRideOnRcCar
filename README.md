@@ -1,7 +1,7 @@
 # KidsRideOnRcCar
 Remote Controlled Kids Car
 
-Dieses Projekt ist meine Version eines fernsteuerbaren Kinderautos (zum reinsetzen).
+Dieses Projekt ist meine Version eines fernsteuerbaren Kinderautos (zum reinsetzen und selber fahren).
 
 ## Features
 
@@ -18,6 +18,6 @@ Dieses Projekt ist meine Version eines fernsteuerbaren Kinderautos (zum reinsetz
 - OLED Display
 - Batterieanzeige
 - Sounds
- - Engine-Start
- - Hupe
- - Leere Batterie
+  - Engine-Start
+  - Hupe
+  - Leere Batterie
