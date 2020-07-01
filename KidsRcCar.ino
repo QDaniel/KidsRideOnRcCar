@@ -22,7 +22,7 @@
 
 #define SM_L A0 //LenkMotor -> Links
 #define SM_R A1 //LenkMotor -> Rechts
-
+#define HORN A2 //Lenkrad Horn
 
 
 CRGB leds[NUM_LEDS];
@@ -48,6 +48,8 @@ float   volt_R2 = 10000.0;
 
 bool blinkState = true;
 unsigned int ledState = 255;
+
+unsigned int btnState = 0;
 
 const unsigned char BasicFont[][8] PROGMEM = {
     {0xff, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81, 0x81}, //  0, L0
@@ -110,7 +112,7 @@ struct EEPROMSettings {
 };
 EEPROMSettings sett;
 
-funcTimer ft[10];
+funcTimer ft[11];
 
 int maxSpeed = 1024;
 int minSpeed = -512;
@@ -118,7 +120,9 @@ int curSpeed = 0;
 int stpSpeed = 25;
 bool lastParentState = true;
 bool ParentState = false;
+bool Bremse = true;
 char ParentControl = (char)0;
+
 long lastBTtime = 0; 
 char btBuf[10]; 
 
@@ -139,6 +143,7 @@ void setup()
   
   pinMode(0, INPUT_PULLUP);
   pinMode(FOOT_PIN, INPUT); // Foot Switch
+  pinMode(HORN, INPUT); // Lenkrad Horn
   pinMode(SM_L, OUTPUT); 
   pinMode(SM_R, OUTPUT);
   
@@ -195,6 +200,11 @@ void setup()
   ft[9].interval = 100;
   ft[9].func = &checkFootSwitch;
 
+  ft[10].enabled = true;
+  ft[10].interval = 100;
+  ft[10].func = &checkButtons;
+
+
   EEPROM.get(0, sett);
   if(sett.Ver != 2)
   {
@@ -213,7 +223,7 @@ void setup()
 void loop()
 {
   long curmillis = millis();
-  for(int i=0; i<=9; i++){
+  for(int i=0; i<=10; i++){
     if(ft[i].enabled && (ft[i].lastRun == 0 || curmillis - ft[i].lastRun >  ft[i].interval)) {
       ft[i].lastRun = curmillis;
       ft[i].func();
@@ -244,18 +254,19 @@ void handleBluetoothInput(int data){
   char ch = (char)data;  
   SeeedOled.setTextXY(7, 0);         //Set the cursor to Xth Page, Yth Column
   SeeedOled.putChar(ch); //Print the String
-  
+
+  if(ch == 'L' || ch == 'R' || ch == 'F' || ch == 'B' || ch == 'G' || ch == 'I' || ch == 'H' || ch == 'J') Bremse = false;
   if(ch == 'L' || ch == 'R') { ParentControl = ch; lr = ch; setBlinkerOn(ch); }
   else if(ch == 'F' || ch == 'B' || ch == 'D'|| ch == 'S') ParentControl = ch;
   else if(ch == 'G' || ch == 'I') { ParentControl = 'F'; lr = ch == 'G' ? 'L': 'R'; setBlinkerOn(lr); }
   else if(ch == 'H' || ch == 'J') { ParentControl = 'B'; lr = ch == 'H' ? 'L': 'R'; setBlinkerOn(lr); }
   else if(ch == 'V') playHorn();
-  else if(ch == 'W') setLEDBit(true, 0); 
-  else if(ch == 'w') setLEDBit(false, 0); 
+  else if(ch == 'W') setLEDBit(true, 0);
+  else if(ch == 'w') setLEDBit(false, 0);
   else if(ch == 'U') setLEDBit(true, 6); 
   else if(ch == 'u') setLEDBit(false, 6); 
-  else if(ch == 'X') setBlinkerOn('W');
-  else if(ch == 'x') setBlinkerOff();
+  else if(ch == 'X') { Bremse = true; setBlinkerOn('W'); }
+  else if(ch == 'x') { Bremse = false; setBlinkerOff(); }
 
   else if(ch == '1') maxSpeed = 100;
   else if(ch == '2') maxSpeed = 200;
@@ -321,8 +332,18 @@ void readTemperatur(){
 }
 
 void checkHorn() {
-if(entfernung < 60) setBlinkerOn('W');
-if(entfernung < 30) playHorn();
+  if(entfernung < 60) setBlinkerOn('W');
+  if(entfernung < 30) playHorn();
+  if(btnState & 1)
+  {
+    btnState = bitClear(btnState, 0);
+    playHorn();
+  }
+}
+
+void checkButtons() {
+   int bt = analogRead(HORN);
+   if(bt > 800) btnState = bitSet(btnState, 0);
 }
 
 void readAbstand(){
@@ -367,7 +388,10 @@ void checkFootSwitch() {
     }
   }
   
-  if (fakt == 1) {
+  if (Bremse) {
+    curSpeed = 0; 
+  }
+  else if (fakt == 1) {
     if(curSpeed < 0) curSpeed = 0; 
     if(curSpeed < maxSpeed) curSpeed += stpSpeed; 
     if(curSpeed > maxSpeed) curSpeed = maxSpeed;
@@ -393,8 +417,8 @@ void setMotor(int cSpeed) {
     }
     else {
       motor1.Enable();  
-      if(cSpeed>0) motor1.TurnRight(map(cSpeed, 0, maxSpeed, 0, 255));
-      else if(cSpeed<0) motor1.TurnLeft(map(cSpeed * -1, 0, maxSpeed, 0, 255)); 
+      if(cSpeed>0) motor1.TurnRight(map(cSpeed, 0, 1024, 0, 255));
+      else if(cSpeed<0) motor1.TurnLeft(map(cSpeed * -1, 0, 1024, 0, 255)); 
     }
     lastSpeed=cSpeed;
   }
@@ -430,23 +454,38 @@ void setLEDs(bool force) {
 //  RF-L ; RF-R ; R-L ; R-R ; W-L ; W-R ; F-L ; F-R ; B-L ; B-R ; N-L ; N-R 
 
   //1 = Front
-  //leds[0] = leds[7] = (ledState & 1) ? CRGB::White : CRGB::Black;
+  leds[8] = leds[7] = (ledState & 1) ? CRGB::White : CRGB::Black;
   //2 = Rücklicht
   //leds[1] = leds[2] = (ledState & (1 << 1)) ? CRGB::Red : CRGB::Black;
+  
   //3 = Blinker L
-  leds[4] = ((ledState & (1 << 2)) && blinkState) ? CRGB::Yellow : CRGB::Black;
+  leds[6] = ((ledState & (1 << 2)) && blinkState) ? CRGB::Orange : CRGB::Black;
   //4 = Blinker R
-  leds[5] = ((ledState & (1 << 3))  && blinkState) ? CRGB::Orange : CRGB::Black;
+  leds[9] = ((ledState & (1 << 3))  && blinkState) ? CRGB::Orange : CRGB::Black;
+  
   //5 = Rückfahrlicht
   leds[1] = leds[2] = (ledState & (1 << 4)) ? CRGB::White : CRGB::Black;
+  if(!(ledState & (1 << 4)))
+  {
+    leds[1] = leds[6];
+    leds[2] = leds[9];
+  }
+
+ //Warnblinker / Arbeitslicht
+  if((ledState & (1 << 2)) &&  (ledState & (1 << 3)) ){
+    leds[4] = leds[5] = leds[6];
+  } else {
+    //7 = Arbeitslicht
+    leds[4] = leds[5] = (ledState & (1 << 6)) ? CRGB::White : CRGB::Black;
+  }
+  
   //6 = Nebel
   //leds[10] = leds[11] = (ledState & (1 << 5)) ? CRGB::White : CRGB::Black;
-  //7 = Arbeitslicht
-  //leds[4] = leds[5] = (ledState & (1 << 6)) ? CRGB::White : CRGB::Black;
   // 8 = Bremslicht
   leds[0] = leds[3] = (ledState & (1 << 7)) ? CRGB::Red : CRGB::Black;
   // 9 = Cockpit
   //leds[4] = leds[5] = (ledState & (1 << 7)) ? CRGB::Blue : CRGB::Black;
+
 
   if((ledState & ((1 << 2) | (1 << 3))) || !blinkState) blinkState = !blinkState; 
   FastLED.show();
